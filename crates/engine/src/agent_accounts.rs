@@ -2802,12 +2802,14 @@ impl AgentAccounts {
                 .json(&serde_json::json!({})),
         )
         .await?;
-        cursor_usage_window(&body)
-            .map(|window| UsageSnapshot {
-                windows: vec![window],
-                plan_label: None,
-            })
-            .ok_or_else(|| schema_error("cursor", &body))
+        let windows = cursor_usage_windows(&body);
+        if windows.is_empty() {
+            return Err(schema_error("cursor", &body));
+        }
+        Ok(UsageSnapshot {
+            windows,
+            plan_label: None,
+        })
     }
 
     /// Refresh a saved Claude slot's expired access token so its usage stays
@@ -3633,6 +3635,40 @@ fn claude_usage_windows(body: &serde_json::Value) -> Option<UsageSnapshot> {
     })
 }
 
+/// The usage windows of Cursor's `GetCurrentPeriodUsage`.
+///
+/// Current payloads carry Cursor's own percentages — `autoPercentUsed` (Auto +
+/// Composer) and `apiPercentUsed` (named models) — which are exactly the
+/// numbers its UI narrates ("You've used 19% of your included total usage").
+/// Spend/limit is NOT usable there: `totalSpend` includes free bonus usage
+/// beyond what was purchased (`bonusSpend`), so it routinely passes `limit`
+/// (24580 / 7000 = 351%) and a clamped ring sat at 100% forever. Payloads
+/// without those fields (older shape) fall back to [`cursor_usage_window`].
+fn cursor_usage_windows(body: &serde_json::Value) -> Vec<AgentUsageWindow> {
+    let plan = body.get("planUsage");
+    let resets_at = json_ms(body.get("billingCycleEnd"));
+    let percent = |key: &str| {
+        plan.and_then(|p| p.get(key))
+            .and_then(|v| v.as_f64())
+            .filter(|v| v.is_finite() && *v >= 0.0)
+            .map(|v| (v / 100.0).clamp(0.0, 1.0) as f32)
+    };
+    let mut windows = Vec::new();
+    for (label, key) in [("Auto", "autoPercentUsed"), ("API", "apiPercentUsed")] {
+        if let Some(used_fraction) = percent(key) {
+            windows.push(AgentUsageWindow {
+                label: label.to_string(),
+                used_fraction,
+                resets_at,
+            });
+        }
+    }
+    if windows.is_empty() {
+        windows.extend(cursor_usage_window(body));
+    }
+    windows
+}
+
 /// The billing-cycle window from Cursor's `GetCurrentPeriodUsage`. The blended
 /// percent is derived from spend/limit in cents: the payload's own
 /// `totalPercentUsed` disagrees with the number Cursor's UI narrates ("You've
@@ -4253,6 +4289,45 @@ mod tests {
             window.resets_at,
             Some(chrono::DateTime::<Utc>::from_timestamp_millis(1_771_077_734_000).unwrap())
         );
+    }
+
+    #[test]
+    fn cursor_percent_fields_beat_spend_over_limit_when_bonus_usage_exceeds_it() {
+        // A current payload: free bonus usage (17580) rides on top of the purchased
+        // limit (7000), so spend/limit = 351% while Cursor itself says 19% / 24%.
+        let body = serde_json::json!({
+            "billingCycleStart": "1791479914000",
+            "billingCycleEnd": "1794158314000",
+            "planUsage": {
+                "totalSpend": 24580,
+                "includedSpend": 7000,
+                "bonusSpend": 17580,
+                "limit": 7000,
+                "autoPercentUsed": 18.284166666666668,
+                "apiPercentUsed": 23.990909090909092,
+                "totalPercentUsed": 18.763358778625953,
+            },
+            "namedModelSelectedDisplayMessage": "You've used 24% of your included API usage",
+        });
+        let windows = cursor_usage_windows(&body);
+        let labels: Vec<_> = windows.iter().map(|w| w.label.as_str()).collect();
+        assert_eq!(labels, ["Auto", "API"]);
+        assert!((windows[0].used_fraction - 0.18284).abs() < 1e-4);
+        assert!((windows[1].used_fraction - 0.23991).abs() < 1e-4);
+        assert!(windows.iter().all(|w| w.resets_at.is_some()));
+    }
+
+    #[test]
+    fn cursor_without_percent_fields_keeps_the_spend_derived_month_window() {
+        let body = serde_json::json!({
+            "billingCycleEnd": "1771077734000",
+            "planUsage": { "totalSpend": 28846, "limit": 40000, "totalPercentUsed": 11.5384 },
+        });
+        let windows = cursor_usage_windows(&body);
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].label, "Month");
+        assert!((windows[0].used_fraction - 0.72115).abs() < 1e-5);
+        assert!(cursor_usage_windows(&serde_json::json!({ "planUsage": {} })).is_empty());
     }
 
     #[test]
