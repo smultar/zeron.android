@@ -1070,6 +1070,43 @@ impl From<zc::attachments::ParsedUserMessage> for ParsedUserMessage {
     }
 }
 
+/// A slash command or skill offered by the composer popup.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct InvocationView {
+    pub name: String,
+    pub description: String,
+    pub input_hint: Option<String>,
+    pub is_skill: bool,
+    /// What goes into the prompt when picked (`/name`, or a skill reference).
+    pub insertion: String,
+}
+
+impl From<zc::InvocationItem> for InvocationView {
+    fn from(i: zc::InvocationItem) -> Self {
+        Self {
+            name: i.name,
+            description: i.description,
+            input_hint: i.input_hint,
+            is_skill: i.is_skill,
+            insertion: i.insertion,
+        }
+    }
+}
+
+/// One line of the agent's checklist.
+#[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
+pub struct TodoView {
+    pub text: String,
+    pub status: TodoState,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
+pub enum TodoState {
+    Pending,
+    InProgress,
+    Completed,
+}
+
 /// A workspace file or folder for `@` mentions.
 #[derive(Debug, Clone, PartialEq, Eq, uniffi::Record)]
 pub struct FileMatch {
@@ -1089,4 +1126,59 @@ pub struct PushPrefs {
     pub done: bool,
     pub input: bool,
     pub failed: bool,
+}
+
+/// One plan rate-limit window of an agent account ("5h", "Week").
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct UsageWindowView {
+    pub label: String,
+    /// 0.0..=1.0
+    pub used_fraction: f32,
+    pub resets_at_ms: Option<i64>,
+}
+
+/// An agent account signed in on a host, with its plan usage (the desktop
+/// footer's plan-usage ring and meters).
+#[derive(Debug, Clone, PartialEq, uniffi::Record)]
+pub struct AgentAccountView {
+    pub id: String,
+    /// Wire harness id (`claude-code`).
+    pub harness: String,
+    pub email: Option<String>,
+    pub display_name: Option<String>,
+    pub plan_label: Option<String>,
+    /// The account this harness is using right now.
+    pub active: bool,
+    pub windows: Vec<UsageWindowView>,
+    /// When the windows were probed (they may be minutes old).
+    pub usage_fetched_at_ms: Option<i64>,
+    /// Why the last probe failed ("Rate limited — retrying in 2m"), if it did.
+    pub usage_error: Option<String>,
+}
+
+impl From<&zeron_proto::AgentAccount> for AgentAccountView {
+    fn from(a: &zeron_proto::AgentAccount) -> Self {
+        Self {
+            id: a.id.clone(),
+            harness: serde_json::to_value(a.harness)
+                .ok()
+                .and_then(|v| v.as_str().map(str::to_owned))
+                .unwrap_or_default(),
+            email: a.email.clone(),
+            display_name: a.display_name.clone(),
+            plan_label: a.plan_label.clone(),
+            active: a.active,
+            windows: a
+                .usage_windows
+                .iter()
+                .map(|w| UsageWindowView {
+                    label: w.label.clone(),
+                    used_fraction: w.used_fraction.clamp(0.0, 1.0),
+                    resets_at_ms: w.resets_at.map(|t| t.timestamp_millis()),
+                })
+                .collect(),
+            usage_fetched_at_ms: a.usage_fetched_at,
+            usage_error: a.usage_error.clone(),
+        }
+    }
 }

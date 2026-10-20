@@ -6,7 +6,7 @@ use std::sync::Arc;
 
 use zeron_client as zc;
 
-use super::types::{CoreResult, SendState};
+use super::types::{CoreResult, SendState, TodoState, TodoView};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, uniffi::Enum)]
 pub enum BusyPolicy {
@@ -488,6 +488,34 @@ impl SessionHandle {
             working_since_ms: snap.working_since_ms,
             last_entry_id: snap.entries.last().map(|e| e.id.clone()),
         }
+    }
+
+    /// The checklist the agent most recently wrote in this chat (every
+    /// harness re-sends the whole list), or empty when there is none.
+    pub fn todos(&self) -> Vec<TodoView> {
+        let snap = self.inner.snapshot();
+        snap.entries
+            .iter()
+            .rev()
+            .filter(|e| e.message.role == zc::MessageRole::Assistant)
+            .flat_map(|e| e.message.parts.iter().rev())
+            .find_map(|p| match p {
+                zc::MessagePart::Tool { call: zeron_proto::ToolCall::Todo { items }, .. } => Some(
+                    items
+                        .iter()
+                        .map(|i| TodoView {
+                            text: i.text.clone(),
+                            status: match i.status() {
+                                zeron_proto::TodoStatus::Completed => TodoState::Completed,
+                                zeron_proto::TodoStatus::InProgress => TodoState::InProgress,
+                                zeron_proto::TodoStatus::Pending => TodoState::Pending,
+                            },
+                        })
+                        .collect(),
+                ),
+                _ => None,
+            })
+            .unwrap_or_default()
     }
 
     /// Plain text of one entry's text parts (copy / share).

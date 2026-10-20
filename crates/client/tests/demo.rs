@@ -120,6 +120,33 @@ fn front_page_mirrors_the_desktop_sidebar() {
 }
 
 #[test]
+fn plan_usage_comes_from_the_hosts_active_account() {
+    let (client, _dir) = demo(fast());
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let snapshot = rt.block_on(client.list_agent_accounts("any-device", false)).unwrap();
+    let account = snapshot.accounts.iter().find(|a| a.active).expect("an active account");
+    assert_eq!(account.usage_windows.len(), 2);
+    assert!(account.usage_windows.iter().all(|w| (0.0..=1.0).contains(&w.used_fraction)));
+}
+
+#[test]
+fn devices_can_be_renamed() {
+    let (client, _dir) = demo(fast());
+    let id = client.workspace().devices[0].id.clone();
+    client.rename_device(&id, "  Studio Mac  ").unwrap();
+    let renamed = client.workspace().devices.iter().find(|d| d.id == id).unwrap().name.clone();
+    assert_eq!(renamed, "Studio Mac");
+    assert!(matches!(
+        client.rename_device(&id, "   "),
+        Err(zeron_client::ClientError::InvalidArgument(_))
+    ));
+    assert!(matches!(
+        client.rename_device("no-such-device", "x"),
+        Err(zeron_client::ClientError::NotFound(_))
+    ));
+}
+
+#[test]
 fn sidebar_writes_reorder_the_front_page() {
     let (client, _dir) = demo(fast());
     client.pin_session("chat-home").unwrap();
@@ -598,4 +625,18 @@ fn sends_to_an_offline_host_park_as_queued_not_working() {
     let row = client.workspace().session("chat-blog").unwrap().clone();
     assert_eq!(row.send_state, Some(zeron_client::SendState::Queued));
     assert_eq!(row.host_indicator, ChatIndicator::Idle);
+}
+
+#[test]
+fn commands_and_skills_come_back_ready_to_insert() {
+    let (client, _dir) = demo(fast());
+    let rt = tokio::runtime::Builder::new_current_thread().enable_all().build().unwrap();
+    let items = rt
+        .block_on(client.list_invocations("any-device", "codex", None, None, None))
+        .unwrap();
+    let compact = items.iter().find(|i| i.name == "compact").expect("a command");
+    assert!(!compact.is_skill);
+    assert_eq!(compact.insertion, "/compact");
+    let skill = items.iter().find(|i| i.is_skill).expect("a skill");
+    assert!(skill.insertion.starts_with("[$"), "{}", skill.insertion);
 }

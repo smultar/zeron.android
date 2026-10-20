@@ -47,6 +47,17 @@ pub enum SessionTarget {
     Projectless { device_id: String },
 }
 
+/// One entry in the composer's `/` (command) and `$` (skill) popup.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InvocationItem {
+    pub name: String,
+    pub description: String,
+    pub input_hint: Option<String>,
+    pub is_skill: bool,
+    /// The text that goes into the prompt when this entry is picked.
+    pub insertion: String,
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub struct NewSession {
     pub target: SessionTarget,
@@ -801,6 +812,20 @@ impl Client {
         self.inner.mark_seen(chat_id);
     }
 
+    /// Rename a device in the registry (LWW; any device may write, as on the
+    /// desktop's Settings → Devices). Blank names are rejected.
+    pub fn rename_device(&self, device_id: &str, name: &str) -> Result<()> {
+        let name = name.trim();
+        if name.is_empty() {
+            return Err(ClientError::InvalidArgument("a device name can't be empty".into()));
+        }
+        if self.inner.registry_write(|doc| doc.rename_device(device_id, name))? {
+            Ok(())
+        } else {
+            Err(ClientError::NotFound(device_id.to_owned()))
+        }
+    }
+
     pub fn set_session_config(&self, chat_id: &str, config: &ChatConfig) -> Result<()> {
         self.chat_write(chat_id, |doc| doc.set_chat_config(chat_id, config))
     }
@@ -1302,6 +1327,113 @@ impl Client {
 
     /// Workspace file search for composer `@` mentions (host `SearchFiles`,
     /// gitignore-aware; an empty query returns the chat's featured files).
+    /// Slash commands and skills the agent offers in a workspace, for the
+    /// composer's `/` and `$` popup. Mirrors the desktop's merge: a skill that
+    /// advertises a slash command hides the plain command of that name.
+    pub async fn list_invocations(
+        &self,
+        device_id: &str,
+        harness: &str,
+        chat_id: Option<String>,
+        space_id: Option<String>,
+        path: Option<String>,
+    ) -> Result<Vec<InvocationItem>> {
+        use zeron_proto::agent::SlashCommand;
+        use zeron_proto::invocation::{
+            Invocation, Skill, valid_invocation_name, valid_skill_command_name, valid_skill_path,
+        };
+        let (commands, skills): (Vec<SlashCommand>, Vec<Skill>) = match self.inner.backend() {
+            Backend::Demo(_) => (
+                vec![
+                    SlashCommand {
+                        name: "compact".into(),
+                        description: "Summarize the conversation to free up context".into(),
+                        input_hint: None,
+                    },
+                    SlashCommand {
+                        name: "review".into(),
+                        description: "Review the current changes".into(),
+                        input_hint: Some("focus area".into()),
+                    },
+                ],
+                vec![Skill {
+                    name: "frontend-design".into(),
+                    path: "~/.agents/skills/frontend-design/SKILL.md".into(),
+                    description: "Build distinctive, production-grade interfaces".into(),
+                    enabled: true,
+                    command: None,
+                }],
+            ),
+            Backend::Live(live) => {
+                let params = serde_json::json!({
+                    "harness": harness, "chatId": chat_id, "spaceId": space_id, "path": path,
+                });
+                let (commands, skills) = futures::join!(
+                    live.relay.call(device_id, zeron_rpc::methods::LIST_COMMANDS, params.clone()),
+                    live.relay.call(device_id, zeron_rpc::methods::LIST_SKILLS, params.clone()),
+                );
+                // One catalog failing leaves the other usable; both failing is an error.
+                if commands.is_err() && skills.is_err() {
+                    return Err(commands.unwrap_err());
+                }
+                (
+                    commands
+                        .ok()
+                        .and_then(|v| serde_json::from_value(v).ok())
+                        .unwrap_or_default(),
+                    skills
+                        .ok()
+                        .and_then(|v| serde_json::from_value::<Option<Vec<Skill>>>(v).ok())
+                        .flatten()
+                        .unwrap_or_default(),
+                )
+            }
+        };
+        let skills: Vec<Skill> = skills
+            .into_iter()
+            .filter(|s| {
+                s.enabled
+                    && valid_invocation_name(&s.name)
+                    && valid_skill_path(&s.path)
+                    && s.command.as_ref().is_none_or(|c| valid_skill_command_name(&c.name))
+            })
+            .collect();
+        let shadowed: std::collections::HashSet<String> = skills
+            .iter()
+            .filter_map(|s| s.command.as_ref().map(|c| c.name.clone()))
+            .collect();
+        let mut items: Vec<InvocationItem> = commands
+            .into_iter()
+            .filter(|c| valid_invocation_name(&c.name) && !shadowed.contains(&c.name))
+            .map(|c| {
+                let invocation = Invocation::Command { name: c.name.clone() };
+                InvocationItem {
+                    name: c.name,
+                    description: c.description,
+                    input_hint: c.input_hint,
+                    is_skill: false,
+                    insertion: invocation.prompt_text(),
+                }
+            })
+            .collect();
+        items.extend(skills.into_iter().map(|s| {
+            let description = if zeron_proto::invocation::native_skill_identity(&s.path) {
+                s.description.clone()
+            } else {
+                format!("{} — {}", s.description, s.path)
+            };
+            let invocation = Invocation::Skill { name: s.name.clone(), path: s.path, command: s.command };
+            InvocationItem {
+                name: s.name,
+                description,
+                input_hint: None,
+                is_skill: true,
+                insertion: invocation.prompt_text(),
+            }
+        }));
+        Ok(items)
+    }
+
     pub async fn search_files(
         &self,
         device_id: &str,
@@ -1363,6 +1495,30 @@ impl Client {
                 let value = live
                     .relay
                     .call(device_id, zeron_rpc::methods::LIST_FOLDERS, params)
+                    .await?;
+                serde_json::from_value(value).map_err(|e| ClientError::HostError(e.to_string()))
+            }
+        }
+    }
+
+    /// The agent accounts signed in on `device_id` with their plan rate-limit
+    /// windows (the desktop footer's plan-usage ring). `force_usage` asks the
+    /// host to probe the provider now instead of serving its last good read.
+    pub async fn list_agent_accounts(
+        &self,
+        device_id: &str,
+        force_usage: bool,
+    ) -> Result<zeron_proto::AgentAccountsSnapshot> {
+        match self.inner.backend() {
+            Backend::Demo(_) => Ok(demo_agent_accounts()),
+            Backend::Live(live) => {
+                let value = live
+                    .relay
+                    .call(
+                        device_id,
+                        zeron_rpc::methods::LIST_AGENT_ACCOUNTS,
+                        serde_json::json!({ "forceUsage": force_usage }),
+                    )
                     .await?;
                 serde_json::from_value(value).map_err(|e| ClientError::HostError(e.to_string()))
             }
@@ -1600,4 +1756,25 @@ mod tests {
         assert_eq!(pending, 0);
         assert_eq!(title.as_deref(), Some("title 19"));
     }
+}
+
+/// The demo host's accounts: one Claude login with a 5-hour and a weekly window.
+fn demo_agent_accounts() -> zeron_proto::AgentAccountsSnapshot {
+    let now = Utc::now();
+    serde_json::from_value(serde_json::json!({
+        "accounts": [{
+            "id": "demo-claude",
+            "harness": "claude-code",
+            "email": "you@example.com",
+            "planLabel": "Max",
+            "active": true,
+            "usageWindows": [
+                { "label": "5h", "usedFraction": 0.62, "resetsAt": (now + chrono::Duration::minutes(94)).to_rfc3339() },
+                { "label": "Week", "usedFraction": 0.31, "resetsAt": (now + chrono::Duration::hours(71)).to_rfc3339() },
+            ],
+            "usageFetchedAt": now.timestamp_millis(),
+        }],
+        "warnings": [],
+    }))
+    .expect("demo accounts match the wire type")
 }

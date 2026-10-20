@@ -227,6 +227,12 @@ impl CoreClient {
         Ok(self.client.unarchive_session(&chat_id)?)
     }
 
+    /// Rename a device (any device in the registry, like the desktop's
+    /// Settings → Devices). Blank names are rejected.
+    pub fn rename_device(&self, device_id: String, name: String) -> CoreResult<()> {
+        Ok(self.client.rename_device(&device_id, &name)?)
+    }
+
     pub fn rename_session(&self, chat_id: String, title: String) -> CoreResult<()> {
         Ok(self.client.rename_session(&chat_id, &title)?)
     }
@@ -438,6 +444,36 @@ impl CoreClient {
                 is_dir: f.is_dir,
             })
             .collect())
+    }
+
+    /// Slash commands and skills for the composer's `/` and `$` popup.
+    pub async fn list_invocations(
+        &self,
+        device_id: String,
+        harness: String,
+        chat_id: Option<String>,
+        space_id: Option<String>,
+        path: Option<String>,
+    ) -> CoreResult<Vec<InvocationView>> {
+        let client = self.client.clone();
+        let items = on_runtime(async move {
+            client.list_invocations(&device_id, &harness, chat_id, space_id, path).await
+        })
+        .await?;
+        Ok(items.into_iter().map(InvocationView::from).collect())
+    }
+
+    /// The agent accounts signed in on `device_id` with their plan usage
+    /// windows. `force_usage` makes the host probe the provider now.
+    pub async fn list_agent_accounts(
+        &self,
+        device_id: String,
+        force_usage: bool,
+    ) -> CoreResult<Vec<AgentAccountView>> {
+        let client = self.client.clone();
+        let snapshot =
+            on_runtime(async move { client.list_agent_accounts(&device_id, force_usage).await }).await?;
+        Ok(snapshot.accounts.iter().map(AgentAccountView::from).collect())
     }
 
     /// Browse folders on a device (`None` = its home folder).

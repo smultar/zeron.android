@@ -1084,6 +1084,12 @@ public protocol CoreClientProtocol: AnyObject, Sendable {
     func isDemo()  -> Bool
     
     /**
+     * The agent accounts signed in on `device_id` with their plan usage
+     * windows. `force_usage` makes the host probe the provider now.
+     */
+    func listAgentAccounts(deviceId: String, forceUsage: Bool) async throws  -> [AgentAccountView]
+    
+    /**
      * Browse folders on a device (`None` = its home folder).
      */
     func listFolders(deviceId: String, path: String?) async throws  -> FolderListing
@@ -1164,6 +1170,12 @@ public protocol CoreClientProtocol: AnyObject, Sendable {
      * "production" | "sandbox", and which kinds).
      */
     func registerPushTarget(token: String, environment: String, prefs: PushPrefs) async throws 
+    
+    /**
+     * Rename a device (any device in the registry, like the desktop's
+     * Settings → Devices). Blank names are rejected.
+     */
+    func renameDevice(deviceId: String, name: String) throws 
     
     func renameProject(spaceId: String, name: String?) throws 
     
@@ -1533,6 +1545,26 @@ open func isDemo() -> Bool  {
 }
     
     /**
+     * The agent accounts signed in on `device_id` with their plan usage
+     * windows. `force_usage` makes the host probe the provider now.
+     */
+open func listAgentAccounts(deviceId: String, forceUsage: Bool)async throws  -> [AgentAccountView]  {
+    return
+        try  await uniffiRustCallAsync(
+            rustFutureFunc: {
+                uniffi_zeron_mobile_fn_method_coreclient_list_agent_accounts(
+                        self.uniffiCloneHandle(),FfiConverterString.lower(deviceId),FfiConverterBool.lower(forceUsage)
+                )
+            },
+            pollFunc: ffi_zeron_mobile_rust_future_poll_rust_buffer,
+            completeFunc: ffi_zeron_mobile_rust_future_complete_rust_buffer,
+            freeFunc: ffi_zeron_mobile_rust_future_free_rust_buffer,
+            liftFunc: FfiConverterSequenceTypeAgentAccountView.lift,
+            errorHandler: FfiConverterTypeCoreError_lift
+        )
+}
+    
+    /**
      * Browse folders on a device (`None` = its home folder).
      */
 open func listFolders(deviceId: String, path: String?)async throws  -> FolderListing  {
@@ -1802,6 +1834,20 @@ open func registerPushTarget(token: String, environment: String, prefs: PushPref
             liftFunc: { $0 },
             errorHandler: FfiConverterTypeCoreError_lift
         )
+}
+    
+    /**
+     * Rename a device (any device in the registry, like the desktop's
+     * Settings → Devices). Blank names are rejected.
+     */
+open func renameDevice(deviceId: String, name: String)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
+        uniffiCallStatus in
+    uniffi_zeron_mobile_fn_method_coreclient_rename_device(
+            self.uniffiCloneHandle(),
+        FfiConverterString.lower(deviceId),
+        FfiConverterString.lower(name),uniffiCallStatus
+    )
+}
 }
     
 open func renameProject(spaceId: String, name: String?)throws   {try rustCallWithError(FfiConverterTypeCoreError_lift) {
@@ -5216,6 +5262,116 @@ public func FfiConverterTypeVoiceSessionListener_lower(_ value: VoiceSessionList
 }
 
 
+
+
+/**
+ * An agent account signed in on a host, with its plan usage (the desktop
+ * footer's plan-usage ring and meters).
+ */
+public struct AgentAccountView: Equatable, Hashable {
+    public var id: String
+    /**
+     * Wire harness id (`claude-code`).
+     */
+    public var harness: String
+    public var email: String?
+    public var displayName: String?
+    public var planLabel: String?
+    /**
+     * The account this harness is using right now.
+     */
+    public var active: Bool
+    public var windows: [UsageWindowView]
+    /**
+     * When the windows were probed (they may be minutes old).
+     */
+    public var usageFetchedAtMs: Int64?
+    /**
+     * Why the last probe failed ("Rate limited — retrying in 2m"), if it did.
+     */
+    public var usageError: String?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(id: String, 
+        /**
+         * Wire harness id (`claude-code`).
+         */harness: String, email: String?, displayName: String?, planLabel: String?, 
+        /**
+         * The account this harness is using right now.
+         */active: Bool, windows: [UsageWindowView], 
+        /**
+         * When the windows were probed (they may be minutes old).
+         */usageFetchedAtMs: Int64?, 
+        /**
+         * Why the last probe failed ("Rate limited — retrying in 2m"), if it did.
+         */usageError: String?) {
+        self.id = id
+        self.harness = harness
+        self.email = email
+        self.displayName = displayName
+        self.planLabel = planLabel
+        self.active = active
+        self.windows = windows
+        self.usageFetchedAtMs = usageFetchedAtMs
+        self.usageError = usageError
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension AgentAccountView: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeAgentAccountView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> AgentAccountView {
+        return
+            try AgentAccountView(
+                id: FfiConverterString.read(from: &buf), 
+                harness: FfiConverterString.read(from: &buf), 
+                email: FfiConverterOptionString.read(from: &buf), 
+                displayName: FfiConverterOptionString.read(from: &buf), 
+                planLabel: FfiConverterOptionString.read(from: &buf), 
+                active: FfiConverterBool.read(from: &buf), 
+                windows: FfiConverterSequenceTypeUsageWindowView.read(from: &buf), 
+                usageFetchedAtMs: FfiConverterOptionInt64.read(from: &buf), 
+                usageError: FfiConverterOptionString.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: AgentAccountView, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.id, into: &buf)
+        FfiConverterString.write(value.harness, into: &buf)
+        FfiConverterOptionString.write(value.email, into: &buf)
+        FfiConverterOptionString.write(value.displayName, into: &buf)
+        FfiConverterOptionString.write(value.planLabel, into: &buf)
+        FfiConverterBool.write(value.active, into: &buf)
+        FfiConverterSequenceTypeUsageWindowView.write(value.windows, into: &buf)
+        FfiConverterOptionInt64.write(value.usageFetchedAtMs, into: &buf)
+        FfiConverterOptionString.write(value.usageError, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAccountView_lift(_ buf: RustBuffer) throws -> AgentAccountView {
+    return try FfiConverterTypeAgentAccountView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeAgentAccountView_lower(_ value: AgentAccountView) -> RustBuffer {
+    return FfiConverterTypeAgentAccountView.lower(value)
+}
 
 
 public struct AppshotLabel: Equatable, Hashable {
@@ -9687,6 +9843,73 @@ public func FfiConverterTypeTranscriptStatus_lift(_ buf: RustBuffer) throws -> T
 #endif
 public func FfiConverterTypeTranscriptStatus_lower(_ value: TranscriptStatus) -> RustBuffer {
     return FfiConverterTypeTranscriptStatus.lower(value)
+}
+
+
+/**
+ * One plan rate-limit window of an agent account ("5h", "Week").
+ */
+public struct UsageWindowView: Equatable, Hashable {
+    public var label: String
+    /**
+     * 0.0..=1.0
+     */
+    public var usedFraction: Float
+    public var resetsAtMs: Int64?
+
+    // Default memberwise initializers are never public by default, so we
+    // declare one manually.
+    public init(label: String, 
+        /**
+         * 0.0..=1.0
+         */usedFraction: Float, resetsAtMs: Int64?) {
+        self.label = label
+        self.usedFraction = usedFraction
+        self.resetsAtMs = resetsAtMs
+    }
+
+    
+
+    
+}
+
+#if compiler(>=6)
+extension UsageWindowView: Sendable {}
+#endif
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public struct FfiConverterTypeUsageWindowView: FfiConverterRustBuffer {
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> UsageWindowView {
+        return
+            try UsageWindowView(
+                label: FfiConverterString.read(from: &buf), 
+                usedFraction: FfiConverterFloat.read(from: &buf), 
+                resetsAtMs: FfiConverterOptionInt64.read(from: &buf)
+        )
+    }
+
+    public static func write(_ value: UsageWindowView, into buf: inout [UInt8]) {
+        FfiConverterString.write(value.label, into: &buf)
+        FfiConverterFloat.write(value.usedFraction, into: &buf)
+        FfiConverterOptionInt64.write(value.resetsAtMs, into: &buf)
+    }
+}
+
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageWindowView_lift(_ buf: RustBuffer) throws -> UsageWindowView {
+    return try FfiConverterTypeUsageWindowView.lift(buf)
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+public func FfiConverterTypeUsageWindowView_lower(_ value: UsageWindowView) -> RustBuffer {
+    return FfiConverterTypeUsageWindowView.lower(value)
 }
 
 
@@ -15677,6 +15900,31 @@ fileprivate struct FfiConverterSequenceString: FfiConverterRustBuffer {
 #if swift(>=5.8)
 @_documentation(visibility: private)
 #endif
+fileprivate struct FfiConverterSequenceTypeAgentAccountView: FfiConverterRustBuffer {
+    typealias SwiftType = [AgentAccountView]
+
+    public static func write(_ value: [AgentAccountView], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeAgentAccountView.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [AgentAccountView] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [AgentAccountView]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeAgentAccountView.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
 fileprivate struct FfiConverterSequenceTypeAuthOrg: FfiConverterRustBuffer {
     typealias SwiftType = [AuthOrg]
 
@@ -16319,6 +16567,31 @@ fileprivate struct FfiConverterSequenceTypeTextRun: FfiConverterRustBuffer {
         seq.reserveCapacity(Int(len))
         for _ in 0 ..< len {
             seq.append(try FfiConverterTypeTextRun.read(from: &buf))
+        }
+        return seq
+    }
+}
+
+#if swift(>=5.8)
+@_documentation(visibility: private)
+#endif
+fileprivate struct FfiConverterSequenceTypeUsageWindowView: FfiConverterRustBuffer {
+    typealias SwiftType = [UsageWindowView]
+
+    public static func write(_ value: [UsageWindowView], into buf: inout [UInt8]) {
+        let len = Int32(value.count)
+        writeInt(&buf, len)
+        for item in value {
+            FfiConverterTypeUsageWindowView.write(item, into: &buf)
+        }
+    }
+
+    public static func read(from buf: inout (data: Data, offset: Data.Index)) throws -> [UsageWindowView] {
+        let len: Int32 = try readInt(&buf)
+        var seq = [UsageWindowView]()
+        seq.reserveCapacity(Int(len))
+        for _ in 0 ..< len {
+            seq.append(try FfiConverterTypeUsageWindowView.read(from: &buf))
         }
         return seq
     }
@@ -17062,6 +17335,9 @@ private let initializationResult: InitializationResult = {
     if (uniffi_zeron_mobile_checksum_method_coreclient_is_demo() != 28119) {
         return InitializationResult.apiChecksumMismatch
     }
+    if (uniffi_zeron_mobile_checksum_method_coreclient_list_agent_accounts() != 22829) {
+        return InitializationResult.apiChecksumMismatch
+    }
     if (uniffi_zeron_mobile_checksum_method_coreclient_list_folders() != 2324) {
         return InitializationResult.apiChecksumMismatch
     }
@@ -17120,6 +17396,9 @@ private let initializationResult: InitializationResult = {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zeron_mobile_checksum_method_coreclient_register_push_target() != 33942) {
+        return InitializationResult.apiChecksumMismatch
+    }
+    if (uniffi_zeron_mobile_checksum_method_coreclient_rename_device() != 40) {
         return InitializationResult.apiChecksumMismatch
     }
     if (uniffi_zeron_mobile_checksum_method_coreclient_rename_project() != 6571) {
