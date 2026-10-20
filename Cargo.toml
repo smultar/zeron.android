@@ -197,3 +197,12 @@ inherits = "release"
 lto = "thin"
 codegen-units = 1
 strip = "debuginfo"
+
+# Android APK (scripts/android/build-core.sh): size over peak speed. The core is
+# not panic=abort — UniFFI turns Rust panics into Kotlin exceptions.
+[profile.mobile-android]
+inherits = "release"
+opt-level = "s"
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
