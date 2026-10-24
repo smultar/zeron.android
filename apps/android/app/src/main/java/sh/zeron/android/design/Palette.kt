@@ -75,6 +75,8 @@ object Palette {
     private val diffDelWash = dyn(0xDC2626, 0xF87171, 0.055f)
     private val diffAddBar = dyn(0x15803D, 0x34D399, 0.55f)
     private val diffDelBar = dyn(0xDC2626, 0xF87171, 0.55f)
+    private val dangerWash = dual(hex(0xDC2626, 0.08f), hex(0xF87171, 0.12f))
+    private val dangerSoft = dyn(0xB91C1C, 0xFCA5A5)
     private val diffHunk = dual(hex(0x5B43E8, 0.07f), hex(0x8B7CF6, 0.08f))
 
     fun color(role: ColorRole, isDark: Boolean): Int = pair(role).get(isDark)
@@ -85,6 +87,8 @@ object Palette {
         ColorRole.TEXT_TERTIARY -> tertiary
         ColorRole.LINK, ColorRole.ACCENT -> accent
         ColorRole.DANGER -> danger
+        ColorRole.DANGER_WASH -> dangerWash
+        ColorRole.DANGER_SOFT -> dangerSoft
         ColorRole.SUCCESS -> success
         ColorRole.WARNING -> warning
         ColorRole.INLINE_CODE_TEXT -> inlineCodeText

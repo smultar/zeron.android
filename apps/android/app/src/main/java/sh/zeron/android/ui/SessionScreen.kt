@@ -161,20 +161,36 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
         for (uri in uris) readStaged(context, uri)?.let { staged += it }
     }
 
-    // Run settings: model, thinking level and speed can change mid-session; the agent is fixed.
+    // Run settings: model, thinking level and speed can change mid-session; the agent too on hosts that switch providers.
     val sessionCfg = remember(revision, chatId) { client.sessionConfig(chatId) }
     var showConfig by remember { mutableStateOf(false) }
     var draftCfg by remember { mutableStateOf<RunConfig?>(null) }
     val cfgHarness = sessionCfg?.harness.orEmpty()
-    val models by androidx.compose.runtime.produceState(emptyList<uniffi.zeron_core.ModelInfo>(), composer.host.deviceId, cfgHarness) {
-        if (composer.host.deviceId.isNotEmpty() && cfgHarness.isNotEmpty()) {
+    // While the settings sheet is open the catalog follows the agent being picked, which can change on
+    // a host that switches providers between turns.
+    val modelHarness = draftCfg?.harness?.takeIf { showConfig } ?: cfgHarness
+    val modelCatalog by androidx.compose.runtime.produceState(modelHarness to emptyList<uniffi.zeron_core.ModelInfo>(), composer.host.deviceId, modelHarness) {
+        value = modelHarness to emptyList()
+        if (composer.host.deviceId.isNotEmpty() && modelHarness.isNotEmpty()) {
             // The host may be offline: fall back to the bundled catalog so the model can still be changed.
-            value = try { client.listModels(composer.host.deviceId, cfgHarness).ifEmpty { uniffi.zeron_core.fallbackModels(cfgHarness) } } catch (_: Exception) { uniffi.zeron_core.fallbackModels(cfgHarness) }
-        } else if (cfgHarness.isNotEmpty()) {
-            value = uniffi.zeron_core.fallbackModels(cfgHarness)
+            value = modelHarness to (try { client.listModels(composer.host.deviceId, modelHarness).ifEmpty { uniffi.zeron_core.fallbackModels(modelHarness) } } catch (_: Exception) { uniffi.zeron_core.fallbackModels(modelHarness) })
+        } else if (modelHarness.isNotEmpty()) {
+            value = modelHarness to uniffi.zeron_core.fallbackModels(modelHarness)
         }
     }
-    val harnesses = remember(cfgHarness) { uniffi.zeron_core.fallbackHarnesses() }
+    val models = if (modelCatalog.first == modelHarness) modelCatalog.second else emptyList()
+    val canSwitchAgent = composer.host.capabilities.providerSwitch && !composer.live.turnRunning
+    val harnesses by androidx.compose.runtime.produceState(uniffi.zeron_core.fallbackHarnesses(), composer.host.deviceId, canSwitchAgent) {
+        if (canSwitchAgent && composer.host.deviceId.isNotEmpty()) {
+            value = try { client.listHarnesses(composer.host.deviceId).filter { it.offered }.ifEmpty { uniffi.zeron_core.fallbackHarnesses() } } catch (_: Exception) { uniffi.zeron_core.fallbackHarnesses() }
+        }
+    }
+    // A new agent starts on its default model, Medium thinking and Slow, like a new session.
+    LaunchedEffect(models, draftCfg?.harness) {
+        val d = draftCfg ?: return@LaunchedEffect
+        if (!showConfig || d.model != null || models.isEmpty() || d.harness != modelHarness) return@LaunchedEffect
+        draftCfg = withModel(d, models.first())
+    }
 
     // Plan usage of the account this chat's agent is signed in with (the desktop's plan ring).
     var account by remember(chatId) { mutableStateOf<uniffi.zeron_core.AgentAccountView?>(null) }
@@ -263,6 +279,11 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
                         tl.onFollowChange = { following = it }
                         tl.onShowDetail = { title, body -> detail = title to body }
                         tl.onOpenImage = { _, bmp -> preview = bmp }
+                        tl.onAction = { action ->
+                            // Provider sign-in lives on the computer running the chat; the phone can't start it yet.
+                            val msg = if (action == "sign-in") "Sign in to this agent in Zeron on the computer running the chat (Settings → Providers). Signing in from the phone isn't built yet." else "Not available on Android yet."
+                            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                        }
                         tl.imageLoader = { ref -> client.readAttachment(composer.host.deviceId, ref) }
                         tl.setDarkMode(dark)
                         tl.attach(client, chatId, composer.host.deviceId)
@@ -343,8 +364,10 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
     if (showConfig && dc != null && current != null) {
         RunConfigSheet(
             initial = current, draft = dc, onDraft = { draftCfg = it },
-            harnesses = harnesses, models = models, agentLocked = true, hasHistory = hasHistory,
+            harnesses = harnesses, models = models, agentLocked = !canSwitchAgent, hasHistory = hasHistory,
+            lockedNote = if (composer.host.capabilities.providerSwitch) "Wait for the run to finish to switch agent. You can still switch models." else "This computer needs a newer Zeron to switch agent. You can still switch models.",
             applyLabel = if (hasHistory && affectsCache(current, dc)) "Apply anyway" else "Apply",
+            canApply = dc.model != null,
             onApply = {
                 showConfig = false
                 try {

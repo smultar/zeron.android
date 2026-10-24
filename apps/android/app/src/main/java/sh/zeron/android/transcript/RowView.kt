@@ -48,6 +48,8 @@ interface RowHost {
     /** A picture for an image widget; null while it loads (`onReady` fires then). */
     fun image(reference: String, onReady: () -> Unit): Bitmap?
     fun openImage(reference: String, bitmap: Bitmap)
+    /** A transcript button (an error card's "Log in") was tapped. */
+    fun perform(action: String)
 }
 
 /**
@@ -333,7 +335,22 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
             is WidgetKind.ToolToggle -> {}
             is WidgetKind.Shimmer -> {}
             is WidgetKind.Visual -> {}
+            is WidgetKind.Action -> paintAction(canvas, k)
         }
+    }
+
+    private val actionText = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        typeface = android.graphics.Typeface.create(android.graphics.Typeface.DEFAULT, android.graphics.Typeface.BOLD)
+        textSize = 14f
+        textAlign = Paint.Align.CENTER
+    }
+
+    /** A capsule in the card's soft red with the label knocked out in the page colour. */
+    private fun paintAction(canvas: Canvas, k: WidgetKind.Action) {
+        fill.color = color(ColorRole.DANGER_SOFT)
+        canvas.drawRoundRect(rect, rect.height() / 2, rect.height() / 2, fill)
+        actionText.color = if (host.isDark) 0xFF060606.toInt() else 0xFFF3F3F5.toInt()
+        canvas.drawText(k.label, rect.centerX(), rect.centerY() - (actionText.ascent() + actionText.descent()) / 2, actionText)
     }
 
     private var copied: UInt = UInt.MAX_VALUE
@@ -453,7 +470,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
         for (w in d.widgets.asReversed()) {
             val interactive = when (w.kind) {
                 is WidgetKind.CopyCode, is WidgetKind.Disclosure, is WidgetKind.ToolToggle,
-                is WidgetKind.Detail, is WidgetKind.Image -> true
+                is WidgetKind.Detail, is WidgetKind.Image, is WidgetKind.Action -> true
                 else -> false
             }
             if (!interactive) continue
@@ -519,6 +536,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
                     is WidgetKind.Disclosure -> host.toggle(d.key)
                     is WidgetKind.ToolToggle -> host.toggleDetail(d.key, k.detail, k.open)
                     is WidgetKind.Detail -> host.showDetail(k.title, w.payload.orEmpty())
+                    is WidgetKind.Action -> host.perform(k.action)
                     is WidgetKind.Image -> host.image(k.reference) {}?.let { host.openImage(k.reference, it) }
                     else -> {}
                 }

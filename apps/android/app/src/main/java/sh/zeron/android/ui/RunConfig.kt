@@ -93,7 +93,7 @@ fun isSpeed(o: ModelOption): Boolean {
 
 /** Does `to` differ from `from` in a way that changes what the provider caches? */
 fun affectsCache(from: RunConfig, to: RunConfig): Boolean =
-    from.model != to.model || from.effort != to.effort || from.options != to.options
+    from.harness != to.harness || from.model != to.model || from.effort != to.effort || from.options != to.options
 
 fun speedIsFast(info: ModelInfo?, options: Map<String, String>): Boolean {
     val o = info?.options?.firstOrNull(::isSpeed) ?: return false
@@ -126,6 +126,7 @@ fun RunConfigPanel(
     models: List<ModelInfo>,
     agentLocked: Boolean,
     warnCache: Boolean,
+    lockedNote: String = "Fixed for this session. You can still switch models.",
     modifier: Modifier = Modifier,
     /** Pick a starred model from any agent (new chats only): switches the agent too. */
     onPickFavorite: ((Favorites.Fav) -> Unit)? = null,
@@ -140,7 +141,7 @@ fun RunConfigPanel(
                 Spacer(Modifier.width(10.dp))
                 Icon(Icons.Rounded.Lock, null, tint = Z.tertiary, modifier = Modifier.size(14.dp))
                 Spacer(Modifier.width(4.dp))
-                Text("Fixed for this session. You can still switch models.", color = Z.subline, fontSize = 12.sp)
+                Text(lockedNote, color = Z.subline, fontSize = 12.sp)
             }
         } else {
             FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -286,8 +287,10 @@ fun RunConfigSheet(
     harnesses: List<HarnessInfo>,
     models: List<ModelInfo>,
     agentLocked: Boolean,
+    lockedNote: String = "Fixed for this session. You can still switch models.",
     hasHistory: Boolean,
     applyLabel: String,
+    canApply: Boolean = true,
     onApply: () -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -296,10 +299,10 @@ fun RunConfigSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, containerColor = Z.elevated) {
         Column(Modifier.navigationBarsPadding()) {
             Text("Run settings", color = Z.text, fontSize = 19.sp, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(horizontal = 22.dp))
-            RunConfigPanel(draft, onDraft, harnesses, models, agentLocked, warn, Modifier.weight(1f, fill = false))
+            RunConfigPanel(draft, onDraft, harnesses, models, agentLocked, warn, lockedNote = lockedNote, modifier = Modifier.weight(1f, fill = false))
             Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 8.dp), horizontalArrangement = Arrangement.End) {
                 TextButton(onClick = onDismiss) { Text("Cancel", color = Z.secondary) }
-                TextButton(onClick = onApply, enabled = changed) {
+                TextButton(onClick = onApply, enabled = changed && canApply) {
                     Text(applyLabel, color = if (changed) (if (warn) Z.warning else Z.accent) else Z.tertiary, fontWeight = FontWeight.SemiBold)
                 }
             }

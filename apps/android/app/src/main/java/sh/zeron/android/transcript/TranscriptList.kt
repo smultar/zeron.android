@@ -57,6 +57,7 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
     var onFollowChange: ((Boolean) -> Unit)? = null
     var onShowDetail: ((String, String) -> Unit)? = null
     var onOpenImage: ((String, Bitmap) -> Unit)? = null
+    var onAction: ((String) -> Unit)? = null
     /** Bytes for an attachment reference (device file path); null if unavailable. */
     var imageLoader: (suspend (String) -> ByteArray?)? = null
     var scope: kotlinx.coroutines.CoroutineScope? = null
@@ -251,6 +252,10 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
             }
         }
         return null
+    }
+
+    override fun perform(action: String) {
+        onAction?.invoke(action)
     }
 
     override fun openImage(reference: String, bitmap: Bitmap) {

@@ -154,13 +154,13 @@ fun NewSessionScreen(app: AppModel, onMenu: () -> Unit, onProfile: () -> Unit, o
         spaceId = null
         noProject = true
     }
-    // A new session starts from the most recently created one (agent, model, thinking level); Medium / Slow
+    // A new session starts from the most recently active one (agent, model, thinking level); Medium / Slow
     // only when there is none. Fast mode is never carried over: it is opted into per session.
     val latest = remember {
         val f = client.frontPage()
         (f.pinned + f.sections.flatMap { it.sessions } + f.recent)
             .filter { it.parentChatId == null && it.harness != null }
-            .maxByOrNull { it.createdAtMs }
+            .maxByOrNull { it.lastActivityMs }
     }
     var harness by remember { mutableStateOf(latest?.harness ?: app.lastHarness ?: "") }
     var model by remember { mutableStateOf<String?>(if (latest != null) latest.model else app.lastModel) }
