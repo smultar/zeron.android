@@ -3,7 +3,6 @@ package sh.zeron.android
 import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
-import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.foundation.background
@@ -36,7 +35,7 @@ private sealed interface Route {
     data class Session(val chatId: String) : Route
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
     private val authCallbacks = MutableSharedFlow<Uri>(extraBufferCapacity = 4, onBufferOverflow = BufferOverflow.DROP_OLDEST)
     private val model get() = (application as ZeronApplication).model
 
@@ -132,6 +131,12 @@ class MainActivity : ComponentActivity() {
         val route = stack.last()
         androidx.activity.compose.BackHandler(enabled = drawer.isOpen) { scope.launch { drawer.close() } }
 
+        val lockOn = app.lockEnabled
+        // A locked app also hides itself in the recent-apps switcher and screenshots.
+        androidx.compose.runtime.LaunchedEffect(lockOn) {
+            if (lockOn) window.addFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+            else window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_SECURE)
+        }
         Box(Modifier.fillMaxSize()) {
         androidx.compose.material3.ModalNavigationDrawer(
             drawerState = drawer,
@@ -162,6 +167,7 @@ class MainActivity : ComponentActivity() {
         }
         sh.zeron.android.ui.VoiceBar(app, Modifier.align(androidx.compose.ui.Alignment.TopCenter))
         if (app.voice.showStage) sh.zeron.android.ui.VoiceStage(app, onOpenChat = { id -> openSession(id) })
+        if (app.lockEnabled && app.locked) sh.zeron.android.ui.LockScreen(this@MainActivity) { app.locked = false }
         }
     }
 }

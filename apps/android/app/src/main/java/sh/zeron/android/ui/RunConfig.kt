@@ -254,7 +254,7 @@ private fun Section(title: String) {
 }
 
 @Composable
-private fun OptionChip(text: String, selected: Boolean, mark: String? = null, onClick: () -> Unit) {
+fun OptionChip(text: String, selected: Boolean, mark: String? = null, onClick: () -> Unit) {
     Row(
         Modifier.clip(CircleShape).background(if (selected) Z.accentSoft else Z.controlFill)
             .then(if (selected) Modifier.border(1.dp, Z.accent.copy(alpha = 0.5f), CircleShape) else Modifier)

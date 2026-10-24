@@ -41,6 +41,13 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data android:scheme="zeron" android:host="callback" />
             </intent-filter>
+            <!-- An agent sign-in on a computer ends here, closing the browser sheet -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="zeron" android:host="signed-in" />
+            </intent-filter>
         </activity>
 
         <!-- Keeps the sync connection alive so session alerts arrive with the app closed. -->

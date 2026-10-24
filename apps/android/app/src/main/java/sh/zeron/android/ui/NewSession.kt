@@ -172,6 +172,7 @@ fun NewSessionScreen(app: AppModel, onMenu: () -> Unit, onProfile: () -> Unit, o
     var text by remember { mutableStateOf(app.newSessionText) }
     val images = remember { mutableStateListOf<Pair<OutgoingAttachment, Bitmap?>>() }
     var busy by remember { mutableStateOf(false) }
+    val mentions = remember { MentionIndex() }
     var error by remember { mutableStateOf<String?>(null) }
     var folderBrowser by remember { mutableStateOf(false) }
     LaunchedEffect(text) { app.newSessionText = text }
@@ -245,7 +246,7 @@ fun NewSessionScreen(app: AppModel, onMenu: () -> Unit, onProfile: () -> Unit, o
 
     fun start() {
         val t = target ?: return
-        val body = text.trim()
+        val body = mentions.encode(text.trim())
         if (body.isEmpty() && images.isEmpty()) return
         busy = true
         error = null
@@ -274,6 +275,7 @@ fun NewSessionScreen(app: AppModel, onMenu: () -> Unit, onProfile: () -> Unit, o
                 app.lastTargetKey = t.key
                 app.newSessionText = ""
                 text = ""
+                mentions.reset()
                 images.clear()
                 busy = false
                 onCreated(chatId)
@@ -362,6 +364,9 @@ fun NewSessionScreen(app: AppModel, onMenu: () -> Unit, onProfile: () -> Unit, o
             }
         }
 
+        val mentionToken = trailingMention(text)
+        val mentionFiles = rememberMentionFiles(client, deviceId, null, target?.spaceId, mentionToken)
+        MentionPopup(mentionFiles, { f -> mentionToken?.let { text = mentions.insert(text, it, f) } }, Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp))
         val token = trailingInvocation(text)
         val invocations = rememberInvocations(client, deviceId, harness, null, target?.spaceId, token != null)
         if (token != null) InvocationPopup(matchInvocations(invocations, token), { text = insertInvocation(text, token, it) }, Modifier.padding(horizontal = 12.dp).padding(bottom = 6.dp))

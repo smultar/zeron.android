@@ -129,6 +129,7 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
     var detail by remember { mutableStateOf<Pair<String, String>?>(null) }
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var menu by remember { mutableStateOf(false) }
+    var showAccounts by remember { mutableStateOf(false) }
 
     // A chat only counts as viewed while the app is on screen: a run that finishes after
     // the app goes to the background stays unseen, so it raises a session alert.
@@ -216,8 +217,12 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
     val current = sessionCfg?.let { RunConfig(it.harness, it.model, it.reasoning, it.modelOptions) }
     val hasHistory = remember(revision) { handle.transcriptStatus().let { it.entryCount > 0u || it.pendingCount > 0u } }
 
+    val mentions = remember(chatId) { MentionIndex() }
+    val mentionToken = trailingMention(text)
+    val mentionFiles = rememberMentionFiles(client, composer.host.deviceId, chatId, null, mentionToken)
+
     fun send(policy: BusyPolicy) {
-        val body = text.trim()
+        val body = mentions.encode(text.trim())
         if (body.isEmpty() && staged.isEmpty()) return
         list?.beginOwnTurn()
         try {
@@ -230,6 +235,7 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
                 ),
             )
             text = ""
+            mentions.reset()
             staged.clear()
             error = null
         } catch (e: Exception) {
@@ -280,9 +286,8 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
                         tl.onShowDetail = { title, body -> detail = title to body }
                         tl.onOpenImage = { _, bmp -> preview = bmp }
                         tl.onAction = { action ->
-                            // Provider sign-in lives on the computer running the chat; the phone can't start it yet.
-                            val msg = if (action == "sign-in") "Sign in to this agent in Zeron on the computer running the chat (Settings → Providers). Signing in from the phone isn't built yet." else "Not available on Android yet."
-                            android.widget.Toast.makeText(ctx, msg, android.widget.Toast.LENGTH_LONG).show()
+                            if (action == "sign-in") showAccounts = true
+                            else android.widget.Toast.makeText(ctx, "Not available on Android yet.", android.widget.Toast.LENGTH_SHORT).show()
                         }
                         tl.imageLoader = { ref -> client.readAttachment(composer.host.deviceId, ref) }
                         tl.setDarkMode(dark)
@@ -323,6 +328,8 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
             }
         } else {
             Composer(
+                mentionFiles = mentionFiles,
+                onPickFile = { f -> mentionToken?.let { text = mentions.insert(text, it, f) } },
                 invocations = rememberInvocations(client, composer.host.deviceId, cfgHarness, chatId, null, trailingInvocation(text) != null),
                 text = text, onText = { text = it },
                 placeholder = "Message ${row?.harnessLabel ?: "the agent"}",
@@ -358,6 +365,10 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
             onRefresh = { lastForced = System.currentTimeMillis(); scope.launch { refreshingUsage = true; loadUsage(true); refreshingUsage = false } },
             onDismiss = { showUsage = false },
         )
+    }
+
+    if (showAccounts && cfgHarness.isNotEmpty()) {
+        AgentAccountsSheet(app, composer.host.deviceId, composer.host.name, cfgHarness) { showAccounts = false }
     }
 
     val dc = draftCfg
@@ -419,7 +430,7 @@ private fun Banner(app: AppModel, c: ComposerState, error: String?) {
         net == ConnectivityState.OFFLINE -> "Offline — messages are saved on this phone" to Z.warning
         net == ConnectivityState.RECONNECTING || c.room.degraded -> "Reconnecting…" to Z.warning
         c.sendState == SendState.QUEUED -> "Waiting to deliver…" to Z.secondary
-        !c.host.online -> "${c.host.name ?: "The host"} is offline — messages will queue" to Z.warning
+        !c.host.online -> "${c.host.name ?: "The host"} is offline — messages queue and send when it's back. Check that it's awake and online." to Z.warning
         else -> return
     }
     val retry = c.sendState == SendState.FAILED
@@ -548,12 +559,15 @@ private fun Composer(
     onUsage: () -> Unit,
     voiceApp: AppModel? = null,
     invocations: List<uniffi.zeron_core.InvocationView> = emptyList(),
+    mentionFiles: List<uniffi.zeron_core.FileMatch> = emptyList(),
+    onPickFile: (uniffi.zeron_core.FileMatch) -> Unit = {},
 ) {
     val hasContent = text.isNotBlank() || staged.isNotEmpty()
     val token = trailingInvocation(text)
     val matches = matchInvocations(invocations, token)
     Column(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 8.dp)) {
         if (token != null) InvocationPopup(matches, { onText(insertInvocation(text, token, it)) }, Modifier.padding(bottom = 6.dp))
+        MentionPopup(mentionFiles, onPickFile, Modifier.padding(bottom = 6.dp))
         Column(
             Modifier.fillMaxWidth().clip(RoundedCornerShape(24.dp)).background(Z.elevated)
                 .border(0.5.dp, Z.hairline, RoundedCornerShape(24.dp)).padding(horizontal = 6.dp, vertical = 6.dp),

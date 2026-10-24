@@ -34,6 +34,9 @@ import java.util.UUID
  * App-wide state owner: holds the Rust [CoreClient] and fans its change
  * notifications out to Compose through revision counters. Main-thread only.
  */
+/** How long the app can sit in the background before it asks again. */
+private const val LOCK_AFTER_MS = 30_000L
+
 class AppModel(private val context: Context) : ClientListener {
     private val main = Handler(Looper.getMainLooper())
     private val prefs = context.getSharedPreferences("zeron", Context.MODE_PRIVATE)
@@ -102,6 +105,15 @@ class AppModel(private val context: Context) : ClientListener {
     fun setBranchFor(key: String, branch: String) { prefs.edit().putString("branch.$key", branch).apply() }
     fun worktreeFor(key: String): Boolean = prefs.getBoolean("worktree.$key", false)
     fun setWorktreeFor(key: String, on: Boolean) { prefs.edit().putBoolean("worktree.$key", on).apply() }
+
+    /** Ask for the phone's fingerprint, face or screen lock when the app opens or returns after a while. */
+    var lockEnabled: Boolean
+        get() = prefs.getBoolean("appLock", false)
+        set(v) { prefs.edit().putBoolean("appLock", v).apply(); if (!v) locked = false }
+
+    /** Whether the lock screen is up; starts up so a cold start is gated. */
+    var locked by mutableStateOf(prefs.getBoolean("appLock", false))
+    private var backgroundedAt = 0L
 
     val isSignedIn get() = client != null
 
@@ -247,12 +259,14 @@ class AppModel(private val context: Context) : ClientListener {
 
     fun onForeground() {
         inForeground = true
+        if (lockEnabled && backgroundedAt != 0L && System.currentTimeMillis() - backgroundedAt > LOCK_AFTER_MS) locked = true
         client?.onForeground()
         refresh()
     }
 
     fun onBackground() {
         inForeground = false
+        backgroundedAt = System.currentTimeMillis()
         // With alerts on, the background service keeps the connection live; otherwise pause it.
         if (!sh.zeron.android.notify.Notifications.active(context)) client?.onBackground()
     }

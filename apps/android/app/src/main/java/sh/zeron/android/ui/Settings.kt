@@ -114,6 +114,12 @@ fun SettingsScreen(app: AppModel, onBack: () -> Unit, onArchived: () -> Unit, mo
             VoiceCard(app)
         }
 
+        SectionLabel("Agent accounts")
+        AgentAccountsCard(app)
+
+        SectionLabel("Security")
+        SecurityCard(app)
+
         SectionLabel("Notifications")
         NotificationsCard()
 
@@ -326,6 +332,30 @@ private fun NotificationsCard() {
             Column(Modifier.fillMaxWidth().clickable { openNotificationSettings(context) }.padding(16.dp)) {
                 Text("Notifications are blocked", color = Z.warning, fontSize = 15.sp)
                 Text("Allow them for Zeron in system settings", color = Z.subline, fontSize = 12.sp)
+            }
+        }
+    }
+}
+
+@Composable
+private fun SecurityCard(app: AppModel) {
+    val activity = androidx.compose.ui.platform.LocalContext.current as? androidx.fragment.app.FragmentActivity
+    var on by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(app.lockEnabled) }
+    val canLock = activity != null && AppLock.available(activity)
+    Card {
+        SwitchRow(
+            "Require unlock",
+            if (canLock) "Ask for your fingerprint, face or screen lock when Zeron opens or returns after a while. Also hides it from recent apps."
+            else "Set up a fingerprint, face or screen lock in Android settings first.",
+            on && canLock,
+        ) { want ->
+            if (!canLock || activity == null) return@SwitchRow
+            if (want) {
+                // Prove it works before turning it on, so a broken unlock can't lock the user out.
+                AppLock.prompt(activity) { app.lockEnabled = true; app.locked = false; on = true }
+            } else {
+                app.lockEnabled = false
+                on = false
             }
         }
     }
