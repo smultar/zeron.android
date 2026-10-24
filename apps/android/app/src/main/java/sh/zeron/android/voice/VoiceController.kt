@@ -266,6 +266,21 @@ class VoiceController(private val context: Context, private val app: AppModel) {
             }
         }
 
+    /** The host's own refusal, so "update Zeron" isn't the answer to everything. */
+    private fun incompatible(host: String): String {
+        val why = uniffi.zeron_core.voiceLastRejection()
+        android.util.Log.w("zeron-voice", "host refused voice: $why")
+        return when (why) {
+            "NativeRuntimeUnavailable" ->
+                "Codex on $host has no voice runtime. Install or update Codex there with its official installer (npm installs lack it), then restart Zeron on $host."
+            "Disabled" -> "Remote voice is turned off on $host. Enable it in Zeron's voice settings there."
+            "WrongHarness" -> "Voice needs Codex on $host."
+            "AudioFormatUnverified", "DuplexUnverified" -> "$host's Codex voice format isn't verified for phone calls yet. Update Codex and Zeron there."
+            "Unsupported" -> "$host couldn't start its voice session (code: Unsupported). Restart Zeron on $host and try again."
+            else -> "Update Zeron on $host and enable remote voice there." + (why?.let { " ($it)" } ?: "")
+        }
+    }
+
     fun message(reason: VoiceEndReason): String {
         val host = hostName.ifEmpty { "the selected device" }
         return when (reason) {
@@ -275,7 +290,7 @@ class VoiceController(private val context: Context, private val app: AppModel) {
             VoiceEndReason.USAGE_UNAVAILABLE -> "Codex usage is currently unavailable on $host."
             VoiceEndReason.BUSY -> "$host is already on a voice call."
             VoiceEndReason.HOST_UNAVAILABLE -> "$host isn't reachable right now."
-            VoiceEndReason.HOST_INCOMPATIBLE -> "Update Zeron on $host and enable remote voice there."
+            VoiceEndReason.HOST_INCOMPATIBLE -> incompatible(host)
             VoiceEndReason.CONNECTION_LOST -> "The call dropped. Start a new one to reconnect."
         }
     }

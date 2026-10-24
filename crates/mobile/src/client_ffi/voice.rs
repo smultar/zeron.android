@@ -123,6 +123,15 @@ pub trait VoiceSessionListener: Send + Sync {
     fn on_voice_closed(&self, reason: Option<VoiceEndReason>);
 }
 
+static LAST_REJECTION: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+/// The host's exact refusal (`NativeRuntimeUnavailable`, `Disabled`…) behind the last call that
+/// ended in an error. `VoiceEndReason` folds several of them into "host incompatible".
+#[uniffi::export]
+pub fn voice_last_rejection() -> Option<String> {
+    LAST_REJECTION.lock().unwrap_or_else(|e| e.into_inner()).clone()
+}
+
 /// Hosts advertising this capability accept client-media voice calls.
 #[uniffi::export]
 pub fn voice_host_capability() -> String {
@@ -418,6 +427,9 @@ impl CoreClient {
             platform.close();
             // Every sender is gone: the presenter drains what was queued.
             let _ = forward.await;
+            if let Err(reason) = &result {
+                *LAST_REJECTION.lock().unwrap_or_else(|e| e.into_inner()) = Some(format!("{reason:?}"));
+            }
             listener.on_voice_closed(result.err().map(VoiceEndReason::from));
         });
         handle
