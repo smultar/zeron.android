@@ -48,6 +48,8 @@ interface RowHost {
     /** A picture for an image widget; null while it loads (`onReady` fires then). */
     fun image(reference: String, onReady: () -> Unit): Bitmap?
     fun openImage(reference: String, bitmap: Bitmap)
+    /** The row at `index` was pressed and held (its message's menu). */
+    fun longPress(index: Int)
     /** A transcript button (an error card's "Log in") was tapped. */
     fun perform(action: String)
 }
@@ -126,7 +128,20 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
     val key: ULong get() = model?.display?.key ?: 0uL
     val version: ULong get() = model?.display?.version ?: 0uL
 
-    fun configure(next: RowModel, kind: RowKind) {
+    /** Position of this row in the frame, for the message menu. */
+    var index = -1
+
+    private var longPressed = false
+    private val longPressCheck = Runnable {
+        if (!dragging && index >= 0) {
+            longPressed = true
+            performHapticFeedback(android.view.HapticFeedbackConstants.LONG_PRESS)
+            host.longPress(index)
+        }
+    }
+
+    fun configure(next: RowModel, kind: RowKind, index: Int = -1) {
+        this.index = index
         val previous = model?.display
         val d = next.display
         val grew = previous != null && previous.key == d.key && d.text.startsWith(previous.text) && d.text.length > previous.text.length
@@ -491,6 +506,9 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
                 downX = ev.x; downY = ev.y
                 downTime = ev.eventTime
                 dragging = false
+                longPressed = false
+                removeCallbacks(longPressCheck)
+                postDelayed(longPressCheck, ViewConfiguration.getLongPressTimeout().toLong())
                 dragScroller = scrollerAt(x, y)
                 dragStartOffset = if (dragScroller >= 0) offsets[dragScroller] else 0f
                 return dragScroller >= 0 || hit(x, y) || model?.display?.links?.isNotEmpty() == true || true
@@ -499,6 +517,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
                 if (dragScroller >= 0) {
                     val dx = ev.x - downX
                     val dy = ev.y - downY
+                    if (abs(dx) > slop || abs(dy) > slop) removeCallbacks(longPressCheck)
                     if (!dragging && abs(dx) > slop && abs(dx) > abs(dy)) {
                         dragging = true
                         parent?.requestDisallowInterceptTouchEvent(true)
@@ -511,10 +530,14 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
                 }
             }
             MotionEvent.ACTION_UP -> {
-                if (!dragging && abs(ev.x - downX) < slop && abs(ev.y - downY) < slop) tap(x, y)
+                removeCallbacks(longPressCheck)
+                if (!longPressed && !dragging && abs(ev.x - downX) < slop && abs(ev.y - downY) < slop) tap(x, y)
                 dragging = false
             }
-            MotionEvent.ACTION_CANCEL -> dragging = false
+            MotionEvent.ACTION_CANCEL -> {
+                removeCallbacks(longPressCheck)
+                dragging = false
+            }
         }
         return true
     }

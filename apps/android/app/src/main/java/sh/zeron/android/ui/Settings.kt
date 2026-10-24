@@ -147,37 +147,7 @@ fun SettingsScreen(app: AppModel, onBack: () -> Unit, onArchived: () -> Unit, mo
         }
     }
 
-    renaming?.let { device ->
-        var name by remember(device.id) { mutableStateOf(device.name) }
-        var error by remember(device.id) { mutableStateOf<String?>(null) }
-        fun save() {
-            val trimmed = name.trim()
-            if (trimmed.isEmpty()) return
-            try {
-                client.renameDevice(device.id, trimmed)
-                app.refresh()
-                renaming = null
-            } catch (e: Exception) {
-                error = (e as? uniffi.zeron_core.CoreException)?.message?.removePrefix("message=") ?: e.message
-            }
-        }
-        AlertDialog(
-            onDismissRequest = { renaming = null },
-            title = { Text("Rename device") },
-            text = {
-                Column {
-                    androidx.compose.material3.OutlinedTextField(
-                        name, { name = it; error = null }, singleLine = true, label = { Text("Name") },
-                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Done),
-                        keyboardActions = androidx.compose.foundation.text.KeyboardActions(onDone = { save() }),
-                    )
-                    error?.let { Text(it, color = Z.danger, fontSize = 13.sp, modifier = Modifier.padding(top = 8.dp)) }
-                }
-            },
-            confirmButton = { TextButton(onClick = ::save, enabled = name.isNotBlank() && name.trim() != device.name) { Text("Save") } },
-            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
-        )
-    }
+    renaming?.let { device -> RenameDeviceDialog(app, device.id, device.name) { renaming = null } }
 
     if (confirmSignOut) {
         AlertDialog(

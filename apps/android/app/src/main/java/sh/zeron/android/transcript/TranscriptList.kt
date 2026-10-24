@@ -58,6 +58,8 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
     var onShowDetail: ((String, String) -> Unit)? = null
     var onOpenImage: ((String, Bitmap) -> Unit)? = null
     var onAction: ((String) -> Unit)? = null
+    /** A message was pressed and held: its row index (see [messageText]). */
+    var onMessageMenu: ((Int) -> Unit)? = null
     /** Bytes for an attachment reference (device file path); null if unavailable. */
     var imageLoader: (suspend (String) -> ByteArray?)? = null
     var scope: kotlinx.coroutines.CoroutineScope? = null
@@ -81,7 +83,7 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
         override fun onBindViewHolder(holder: Holder, position: Int) {
             val f = frame ?: return
             val p = f.placement(position.toUInt()) ?: return
-            holder.row.configure(model(f, position, p.key, p.version), p.kind)
+            holder.row.configure(model(f, position, p.key, p.version), p.kind, position)
         }
         override fun onViewAttachedToWindow(holder: Holder) = holder.row.visualViews().forEach { it.setActive(true) }
         override fun onViewDetachedFromWindow(holder: Holder) = holder.row.visualViews().forEach { it.setActive(false) }
@@ -195,6 +197,13 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
     }
 
     fun plainText(): String = frame?.plainText().orEmpty()
+
+    /** The whole message that owns the row at `index`, as plain text. */
+    fun messageText(index: Int): String? = frame?.messageText(index.toUInt())?.takeIf { it.isNotBlank() }
+
+    override fun longPress(index: Int) {
+        onMessageMenu?.invoke(index)
+    }
 
     // ---- RowHost ------------------------------------------------------------------
 

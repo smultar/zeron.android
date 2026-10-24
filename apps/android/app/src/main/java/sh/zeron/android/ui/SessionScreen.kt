@@ -51,6 +51,8 @@ import androidx.compose.material.icons.rounded.KeyboardArrowUp
 import androidx.compose.material.icons.rounded.MoreVert
 import androidx.compose.material.icons.rounded.Archive
 import androidx.compose.material.icons.rounded.ContentCopy
+import androidx.compose.material.icons.rounded.Edit
+import androidx.compose.material.icons.rounded.Share
 import androidx.compose.material.icons.rounded.PushPin
 import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material.icons.rounded.Send
@@ -130,6 +132,8 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
     var preview by remember { mutableStateOf<Bitmap?>(null) }
     var menu by remember { mutableStateOf(false) }
     var showAccounts by remember { mutableStateOf(false) }
+    var messageMenu by remember { mutableStateOf<Int?>(null) }
+    var renamingHost by remember { mutableStateOf(false) }
 
     // A chat only counts as viewed while the app is on screen: a run that finishes after
     // the app goes to the background stays unseen, so it raises a session alert.
@@ -269,7 +273,8 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
                                 if (row?.pinned == true) client.unpinSession(chatId) else client.pinSession(chatId)
                             },
                         ),
-                        listOf(SheetAction(Icons.Rounded.Archive, "Archive") { client.archiveSession(chatId); onBack() }),
+                        listOf(SheetAction(Icons.Rounded.Archive, "Archive") { client.archiveSession(chatId); onBack() }) +
+                            (if (composer.host.deviceId.isNotEmpty()) listOf(SheetAction(Icons.Rounded.Edit, "Rename ${composer.host.name ?: "computer"}") { renamingHost = true }) else emptyList()),
                     ),
                     onDismiss = { menu = false },
                 )
@@ -285,6 +290,7 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
                         tl.onFollowChange = { following = it }
                         tl.onShowDetail = { title, body -> detail = title to body }
                         tl.onOpenImage = { _, bmp -> preview = bmp }
+                        tl.onMessageMenu = { messageMenu = it }
                         tl.onAction = { action ->
                             if (action == "sign-in") showAccounts = true
                             else android.widget.Toast.makeText(ctx, "Not available on Android yet.", android.widget.Toast.LENGTH_SHORT).show()
@@ -366,6 +372,33 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
             onDismiss = { showUsage = false },
         )
     }
+
+    messageMenu?.let { index ->
+        val body = list?.messageText(index)
+        if (body == null) messageMenu = null
+        else ActionSheet(
+            title = body.lineSequence().firstOrNull { it.isNotBlank() }.orEmpty().take(80),
+            subtitle = null,
+            groups = listOf(
+                listOf(
+                    SheetAction(Icons.Rounded.ContentCopy, "Copy message") {
+                        list?.copy(body)
+                        android.widget.Toast.makeText(context, "Copied", android.widget.Toast.LENGTH_SHORT).show()
+                    },
+                    SheetAction(Icons.Rounded.Share, "Share") {
+                        context.startActivity(
+                            android.content.Intent.createChooser(
+                                android.content.Intent(android.content.Intent.ACTION_SEND).setType("text/plain").putExtra(android.content.Intent.EXTRA_TEXT, body),
+                                null,
+                            ),
+                        )
+                    },
+                ),
+            ),
+            onDismiss = { messageMenu = null },
+        )
+    }
+    if (renamingHost) RenameDeviceDialog(app, composer.host.deviceId, composer.host.name ?: "") { renamingHost = false }
 
     if (showAccounts && cfgHarness.isNotEmpty()) {
         AgentAccountsSheet(app, composer.host.deviceId, composer.host.name, cfgHarness) { showAccounts = false }
