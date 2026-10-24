@@ -37,6 +37,8 @@ import java.util.UUID
 /** How long the app can sit in the background before it asks again. */
 private const val LOCK_AFTER_MS = 30_000L
 
+private val EXPIRED_RETRY_MS = longArrayOf(15_000, 60_000, 300_000)
+
 class AppModel(private val context: Context) : ClientListener {
     private val main = Handler(Looper.getMainLooper())
     private val prefs = context.getSharedPreferences("zeron", Context.MODE_PRIVATE)
@@ -153,6 +155,9 @@ class AppModel(private val context: Context) : ClientListener {
         }
     }
 
+    // WorkOS refresh tokens are single-use: the server spends the old one the moment it hands out the
+    // new one, so the new pair must reach disk before anything else can go wrong (hence `commit`).
+    @Synchronized
     private fun store(c: Credentials.WorkOs) {
         secure.edit().putString(
             "credentials",
@@ -160,7 +165,7 @@ class AppModel(private val context: Context) : ClientListener {
                 .put("userId", c.userId).put("orgId", c.orgId)
                 .put("accessToken", c.tokens.accessToken).put("refreshToken", c.tokens.refreshToken)
                 .toString(),
-        ).apply()
+        ).commit()
     }
 
     // ---- lifecycle ----------------------------------------------------------------
@@ -257,6 +262,27 @@ class AppModel(private val context: Context) : ClientListener {
         main.post { sh.zeron.android.notify.KeepAliveService.sync(context) }
     }
 
+    private var expiredRetries = 0
+
+    /**
+     * The edge refused to refresh the login. It answers 401 for a WorkOS outage or a dropped reply as
+     * well as for a dead login, so the saved login is kept and retried a few times (15 s, 1 min,
+     * 5 min) before the user is asked to sign in again.
+     */
+    private fun authExpired() {
+        val saved = stored()
+        if (saved == null || expiredRetries >= EXPIRED_RETRY_MS.size) {
+            expiredRetries = 0
+            signOut(forget = false)
+            return
+        }
+        val wait = EXPIRED_RETRY_MS[expiredRetries++]
+        main.postDelayed({
+            val again = stored()
+            if (again != null && client != null) start(again)
+        }, wait)
+    }
+
     fun onForeground() {
         inForeground = true
         if (lockEnabled && backgroundedAt != 0L && System.currentTimeMillis() - backgroundedAt > LOCK_AFTER_MS) locked = true
@@ -282,6 +308,13 @@ class AppModel(private val context: Context) : ClientListener {
     // ---- core events ---------------------------------------------------------------
 
     override fun onEvent(event: ClientEvent) {
+        // Save a rotated login on the thread the core reported it on, not after a hop to the main
+        // thread: if Android kills the process in between, the spent token is all that's left.
+        if (event is ClientEvent.AuthRefreshed) {
+            (stored() as? Credentials.WorkOs)?.let { store(Credentials.WorkOs(it.userId, it.orgId, event.tokens)) }
+            expiredRetries = 0
+            return
+        }
         main.post {
             when (event) {
                 is ClientEvent.WorkspaceChanged -> {
@@ -291,11 +324,8 @@ class AppModel(private val context: Context) : ClientListener {
                 is ClientEvent.SessionChanged -> composerRevision++
                 is ClientEvent.ComposerChanged -> composerRevision++
                 is ClientEvent.ConnectivityChanged -> connectivity = event.connectivity
-                is ClientEvent.AuthRefreshed -> {
-                    val c = stored() as? Credentials.WorkOs
-                    if (c != null) store(Credentials.WorkOs(c.userId, c.orgId, event.tokens))
-                }
-                is ClientEvent.AuthExpired -> signOut(forget = false)
+                is ClientEvent.AuthRefreshed -> {}
+                is ClientEvent.AuthExpired -> authExpired()
             }
         }
     }
