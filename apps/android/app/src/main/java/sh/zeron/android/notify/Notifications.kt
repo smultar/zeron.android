@@ -123,6 +123,8 @@ object Notifications {
             .setSmallIcon(R.drawable.ic_stat_zeron)
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            // The car's conversation list uses the chat id too, so one chat is one conversation.
+            .setShortcutId(chatId)
             .addAction(reply)
             .addAction(read)
             .setAutoCancel(true)
