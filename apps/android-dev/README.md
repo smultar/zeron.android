@@ -1,4 +1,9 @@
-# Zeron for Android
+# Zeron for Android (dev)
+
+This is the community build, kept beside upstream's official app in `apps/android`. It adds Android
+Auto, app lock, `@` mentions, agent switching, commands, message copy and more. Build its core with
+`scripts/android/build-dev-core.sh` (the shared `build-core.sh` at the small `mobile-android` profile,
+bindings patched, libraries stripped).
 
 A native viewport onto the zeron mesh, built on the same Rust mobile core as
 the iOS app (`crates/mobile`, via UniFFI). The phone is a peer device: it
@@ -19,8 +24,8 @@ Rust Android targets:
 ```sh
 rustup target add aarch64-linux-android x86_64-linux-android
 cargo install cargo-ndk
-scripts/android/build-core.sh          # .so + Kotlin bindings -> target/android-core
-cd apps/android
+scripts/android/build-dev-core.sh      # .so + Kotlin bindings -> target/android-core
+cd apps/android-dev
 ./gradlew :app:installDebug
 ```
 

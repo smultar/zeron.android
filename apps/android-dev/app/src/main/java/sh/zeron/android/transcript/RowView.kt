@@ -351,6 +351,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
             is WidgetKind.Shimmer -> {}
             is WidgetKind.Visual -> {}
             is WidgetKind.Action -> paintAction(canvas, k)
+            is WidgetKind.Subagent -> {}
         }
     }
 
@@ -485,7 +486,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
         for (w in d.widgets.asReversed()) {
             val interactive = when (w.kind) {
                 is WidgetKind.CopyCode, is WidgetKind.Disclosure, is WidgetKind.ToolToggle,
-                is WidgetKind.Detail, is WidgetKind.Image, is WidgetKind.Action -> true
+                is WidgetKind.Detail, is WidgetKind.Image, is WidgetKind.Action, is WidgetKind.Subagent -> true
                 else -> false
             }
             if (!interactive) continue
@@ -560,6 +561,7 @@ class RowView(context: Context, private val host: RowHost) : ViewGroup(context) 
                     is WidgetKind.ToolToggle -> host.toggleDetail(d.key, k.detail, k.open)
                     is WidgetKind.Detail -> host.showDetail(k.title, w.payload.orEmpty())
                     is WidgetKind.Action -> host.perform(k.action)
+                    is WidgetKind.Subagent -> host.perform("subagent")
                     is WidgetKind.Image -> host.image(k.reference) {}?.let { host.openImage(k.reference, it) }
                     else -> {}
                 }

@@ -192,7 +192,7 @@ class TranscriptList(context: Context) : RecyclerView(context), RowHost {
     }
 
     fun close() {
-        engine.closeTranscript()
+        engine.close()
         visuals.values.forEach { it.session.detach() }
     }
 
