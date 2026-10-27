@@ -11,6 +11,8 @@ import android.media.AudioAttributes
 import android.net.Uri
 import android.os.Build
 import androidx.core.app.NotificationCompat
+import androidx.core.app.Person
+import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
 import sh.zeron.android.MainActivity
 import sh.zeron.android.R
@@ -80,15 +82,49 @@ object Notifications {
         return PendingIntent.getActivity(context, request, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
-    /** Post a session alert; tapping it opens that chat. */
-    fun show(context: Context, chatId: String, title: String, category: Category) {
+    const val EXTRA_REPLY = "reply"
+
+    /** A broadcast to [CarActionReceiver] for one chat; `mutable` for the reply (its text is filled in). */
+    private fun actionIntent(context: Context, action: String, chatId: String, mutable: Boolean): PendingIntent {
+        val intent = Intent(context, CarActionReceiver::class.java).setAction(action).putExtra("chat", chatId)
+        val flags = PendingIntent.FLAG_UPDATE_CURRENT or if (mutable && Build.VERSION.SDK_INT >= 31) PendingIntent.FLAG_MUTABLE else PendingIntent.FLAG_IMMUTABLE
+        return PendingIntent.getBroadcast(context, chatId.hashCode() xor action.hashCode(), intent, flags)
+    }
+
+    /** What a car reads aloud: the event, then the start of the agent's last message. */
+    private fun spoken(category: Category, preview: String?): String {
+        val tail = preview?.replace(Regex("""\s+"""), " ")?.trim().orEmpty()
+        return if (tail.isEmpty()) category.body else "${category.body}. ${tail.take(280)}"
+    }
+
+    /**
+     * Post a session alert; tapping it opens that chat. It is a messaging notification — the agent
+     * "says" the event, with Reply and Mark as read actions — so Android Auto reads it aloud and takes
+     * a spoken reply, which is queued into the chat (never run as a command while the agent is busy).
+     */
+    fun show(context: Context, chatId: String, title: String, category: Category, agent: String? = null, preview: String? = null) {
         if (!active(context) || !wants(context, category)) return
         ensureChannels(context)
+        val me = Person.Builder().setName("You").build()
+        val from = Person.Builder().setName(agent ?: "Zeron").setKey("agent").setImportant(true).build()
+        val style = NotificationCompat.MessagingStyle(me)
+            .setConversationTitle(title)
+            .addMessage(spoken(category, preview), System.currentTimeMillis(), from)
+        val reply = NotificationCompat.Action.Builder(R.drawable.ic_stat_zeron, "Reply", actionIntent(context, CarActionReceiver.ACTION_REPLY, chatId, mutable = true))
+            .addRemoteInput(RemoteInput.Builder(EXTRA_REPLY).setLabel("Reply").build())
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
+            .setShowsUserInterface(false)
+            .build()
+        val read = NotificationCompat.Action.Builder(R.drawable.ic_stat_zeron, "Mark as read", actionIntent(context, CarActionReceiver.ACTION_READ, chatId, mutable = false))
+            .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_MARK_AS_READ)
+            .setShowsUserInterface(false)
+            .build()
         val n = NotificationCompat.Builder(context, category.channel)
             .setSmallIcon(R.drawable.ic_stat_zeron)
-            .setContentTitle(title)
-            .setContentText(category.body)
+            .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+            .addAction(reply)
+            .addAction(read)
             .setAutoCancel(true)
             .setContentIntent(openIntent(context, chatId, chatId.hashCode()))
             .build()
