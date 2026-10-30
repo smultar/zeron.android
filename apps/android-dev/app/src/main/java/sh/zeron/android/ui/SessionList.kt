@@ -247,7 +247,9 @@ fun SessionItem(app: AppModel, row: SessionRow, onOpen: (String) -> Unit, showAc
             verticalAlignment = Alignment.Top,
         ) {
             Box(Modifier.padding(top = 2.dp).size(20.dp), contentAlignment = Alignment.Center) {
-                StatusGlyph(row.indicator, row.unseen, size = 18.dp)
+                val harness = row.harness
+                if (!harness.isNullOrEmpty()) AgentMark(harness, size = 18.dp)
+                else StatusGlyph(row.indicator, row.unseen, size = 18.dp)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -270,7 +272,13 @@ fun SessionItem(app: AppModel, row: SessionRow, onOpen: (String) -> Unit, showAc
             }
             Spacer(Modifier.width(10.dp))
             Column(horizontalAlignment = Alignment.End) {
-                Text(row.timeLabel, color = Z.subline, fontSize = 12.sp)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (!row.harness.isNullOrEmpty()) {
+                        StatusGlyph(row.indicator, row.unseen, size = 12.dp)
+                        Spacer(Modifier.width(6.dp))
+                    }
+                    Text(row.timeLabel, color = Z.subline, fontSize = 12.sp)
+                }
                 if (!row.deviceOnline && row.project != null) Text("offline", color = Z.warning.copy(alpha = 0.8f), fontSize = 11.sp)
             }
         }

@@ -251,6 +251,10 @@ fun SessionScreen(app: AppModel, chatId: String, onMenu: () -> Unit, onBack: () 
         // Top bar
         Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp, vertical = 4.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = onMenu) { Icon(Icons.Rounded.Menu, "Menu", tint = Z.text) }
+            val headerHarness = cfgHarness.ifEmpty { row?.harness.orEmpty() }
+            if (headerHarness.isNotEmpty()) {
+                AgentMark(headerHarness, size = 18.dp, modifier = Modifier.padding(end = 8.dp))
+            }
             Column(Modifier.weight(1f)) {
                 Text(
                     composer.title.ifBlank { "New session" }, color = Z.text, fontSize = 17.sp, fontWeight = FontWeight.SemiBold,

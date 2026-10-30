@@ -15,7 +15,11 @@ import androidx.compose.ui.unit.dp
 import sh.zeron.android.design.Icons
 
 /** Claude's brand orange, as on the desktop. */
-private val CLAUDE_ORANGE = Color(0xFFD97757)
+val CLAUDE_ORANGE = Color(0xFFD97757)
+
+/** The mark's tint: Claude keeps its orange, everything else takes `fallback`. */
+fun agentMarkTintArgb(harness: String, fallback: Int): Int =
+    if (harness == "claude-code" || harness == "mock") CLAUDE_ORANGE.toArgb() else fallback
 
 /**
  * The harness brand marks the desktop bundles (the `-mark.svg` icons in `crates/ui/assets/icons`).

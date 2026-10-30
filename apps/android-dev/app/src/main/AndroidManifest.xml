@@ -24,7 +24,7 @@
         android:theme="@style/Theme.Zeron"
         android:usesCleartextTraffic="true">
 
-        <!-- Android Auto reads session alerts aloud and takes a spoken reply (messaging notifications). -->
+        <!-- Android Auto: session alerts read aloud with a spoken reply, and the car's conversation screen. -->
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

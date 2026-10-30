@@ -59,6 +59,26 @@ object Icons {
     }
 
     /**
+     * A square raster of `name`, inset and tinted. Used where Compose isn't
+     * available (the car conversation avatars).
+     */
+    fun tintedBitmap(name: String, px: Int, tint: Int): Bitmap? {
+        if (px <= 0) return null
+        val key = "$name@$px#$tint"
+        bitmaps.get(key)?.let { return it }
+        val art = (px * 0.72f).toInt().coerceAtLeast(1)
+        val src = bitmap(name, art) ?: return null
+        val out = Bitmap.createBitmap(px, px, Bitmap.Config.ARGB_8888)
+        val c = Canvas(out)
+        paint.colorFilter = PorterDuffColorFilter(tint, PorterDuff.Mode.SRC_IN)
+        val pad = (px - src.width) / 2f
+        c.drawBitmap(src, pad, pad, paint)
+        paint.colorFilter = null
+        bitmaps.put(key, out)
+        return out
+    }
+
+    /**
      * Draw `name` in `rect` (canvas units; `density` converts to pixels for
      * a crisp raster). `tint` applies to template icons only.
      */

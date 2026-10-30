@@ -18,8 +18,8 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "0.2.113"
-        // `-Pabis=arm64-v8a` builds a phone-only APK (half the size).
-        val abis = (project.findProperty("abis") as String?)?.split(",") ?: listOf("arm64-v8a", "x86_64")
+        // Phones are arm64; `-Pabis=x86_64` (or `arm64-v8a,x86_64`) adds the emulator's ABI.
+        val abis = (project.findProperty("abis") as String?)?.split(",") ?: listOf("arm64-v8a")
         ndk { abiFilters += abis }
     }
 

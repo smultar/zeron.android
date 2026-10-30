@@ -14,6 +14,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.Person
 import androidx.core.app.RemoteInput
 import androidx.core.content.ContextCompat
+import androidx.core.graphics.drawable.IconCompat
+import androidx.core.graphics.drawable.toBitmap
 import sh.zeron.android.MainActivity
 import sh.zeron.android.R
 
@@ -105,11 +107,23 @@ object Notifications {
     fun show(context: Context, chatId: String, title: String, category: Category, agent: String? = null, preview: String? = null) {
         if (!active(context) || !wants(context, category)) return
         ensureChannels(context)
+        val logo = IconCompat.createWithResource(context, R.drawable.zeron_icon)
         val me = Person.Builder().setName("You").build()
-        val from = Person.Builder().setName(agent ?: "Zeron").setKey("agent").setImportant(true).build()
+        val agentName = agent?.takeIf { it.isNotBlank() }
+        // Grouped under "Zeron" with the statue as the avatar, so the shade
+        // does not invent a person glyph. The agent type is the sender line.
+        val from = Person.Builder()
+            .setName(agentName ?: "Agent")
+            .setKey("agent")
+            .setIcon(logo)
+            .setBot(true)
+            .setImportant(true)
+            .build()
+        val body = spoken(category, preview)
         val style = NotificationCompat.MessagingStyle(me)
-            .setConversationTitle(title)
-            .addMessage(spoken(category, preview), System.currentTimeMillis(), from)
+            .setGroupConversation(true)
+            .setConversationTitle("Zeron")
+            .addMessage(if (title.isBlank()) body else "$title · $body", System.currentTimeMillis(), from)
         val reply = NotificationCompat.Action.Builder(R.drawable.ic_stat_zeron, "Reply", actionIntent(context, CarActionReceiver.ACTION_REPLY, chatId, mutable = true))
             .addRemoteInput(RemoteInput.Builder(EXTRA_REPLY).setLabel("Reply").build())
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
@@ -121,6 +135,10 @@ object Notifications {
             .build()
         val n = NotificationCompat.Builder(context, category.channel)
             .setSmallIcon(R.drawable.ic_stat_zeron)
+            .setLargeIcon(ContextCompat.getDrawable(context, R.drawable.zeron_icon)?.toBitmap())
+            .setContentTitle("Zeron")
+            .setSubText(agentName)
+            .setContentText(body)
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             // The car's conversation list uses the chat id too, so one chat is one conversation.
