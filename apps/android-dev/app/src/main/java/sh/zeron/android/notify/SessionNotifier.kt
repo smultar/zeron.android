@@ -44,7 +44,7 @@ class SessionNotifier(private val context: Context) {
                 before == ChatIndicator.WORKING && now == ChatIndicator.COMPLETED && row.unseen -> Category.DONE
                 else -> null
             } ?: continue
-            Notifications.show(context, row.id, row.title, category, row.harnessLabel, row.preview)
+            Notifications.show(context, row.id, row.title, category, row.harnessLabel, row.preview, row.harness)
         }
         baseline.keys.retainAll(seen)
         seeded = true

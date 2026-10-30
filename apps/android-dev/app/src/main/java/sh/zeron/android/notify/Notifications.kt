@@ -18,6 +18,9 @@ import androidx.core.graphics.drawable.IconCompat
 import androidx.core.graphics.drawable.toBitmap
 import sh.zeron.android.MainActivity
 import sh.zeron.android.R
+import sh.zeron.android.design.Icons
+import sh.zeron.android.ui.agentMarkAsset
+import sh.zeron.android.ui.agentMarkTintArgb
 
 /** Which session event a notification is for — also the per-kind preference. */
 enum class Category(val key: String, val channel: String, val title: String, val body: String, val sound: Int) {
@@ -104,26 +107,37 @@ object Notifications {
      * "says" the event, with Reply and Mark as read actions — so Android Auto reads it aloud and takes
      * a spoken reply, which is queued into the chat (never run as a command while the agent is busy).
      */
-    fun show(context: Context, chatId: String, title: String, category: Category, agent: String? = null, preview: String? = null) {
+    /** The agent's mark on a white disc, as a conversation avatar (the shade crops it round). */
+    private fun agentAvatar(harness: String?): IconCompat? {
+        harness ?: return null
+        val size = 128
+        val mark = Icons.tintedBitmap(agentMarkAsset(harness), (size * 0.78f).toInt(), agentMarkTintArgb(harness, 0xFF1F1F1F.toInt())) ?: return null
+        val out = android.graphics.Bitmap.createBitmap(size, size, android.graphics.Bitmap.Config.ARGB_8888)
+        val c = android.graphics.Canvas(out)
+        c.drawCircle(size / 2f, size / 2f, size / 2f, android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply { color = 0xFFFFFFFF.toInt() })
+        c.drawBitmap(mark, (size - mark.width) / 2f, (size - mark.height) / 2f, null)
+        return IconCompat.createWithBitmap(out)
+    }
+
+    fun show(context: Context, chatId: String, title: String, category: Category, agent: String? = null, preview: String? = null, harness: String? = null) {
         if (!active(context) || !wants(context, category)) return
         ensureChannels(context)
-        val logo = IconCompat.createWithResource(context, R.drawable.zeron_icon)
+        // Zeron leads (the conversation is titled "Zeron" with the statue as its picture); each
+        // message comes from the chat, named for it and pictured with its agent's mark.
         val me = Person.Builder().setName("You").build()
-        val agentName = agent?.takeIf { it.isNotBlank() }
-        // Grouped under "Zeron" with the statue as the avatar, so the shade
-        // does not invent a person glyph. The agent type is the sender line.
+        val chatName = title.ifBlank { agent?.takeIf { it.isNotBlank() } ?: "Session" }
         val from = Person.Builder()
-            .setName(agentName ?: "Agent")
-            .setKey("agent")
-            .setIcon(logo)
+            .setName(chatName)
+            .setKey("chat:$chatId")
             .setBot(true)
             .setImportant(true)
+            .also { p -> (agentAvatar(harness) ?: IconCompat.createWithResource(context, R.drawable.zeron_icon)).let(p::setIcon) }
             .build()
         val body = spoken(category, preview)
         val style = NotificationCompat.MessagingStyle(me)
             .setGroupConversation(true)
             .setConversationTitle("Zeron")
-            .addMessage(if (title.isBlank()) body else "$title · $body", System.currentTimeMillis(), from)
+            .addMessage(body, System.currentTimeMillis(), from)
         val reply = NotificationCompat.Action.Builder(R.drawable.ic_stat_zeron, "Reply", actionIntent(context, CarActionReceiver.ACTION_REPLY, chatId, mutable = true))
             .addRemoteInput(RemoteInput.Builder(EXTRA_REPLY).setLabel("Reply").build())
             .setSemanticAction(NotificationCompat.Action.SEMANTIC_ACTION_REPLY)
@@ -137,8 +151,7 @@ object Notifications {
             .setSmallIcon(R.drawable.ic_stat_zeron)
             .setLargeIcon(ContextCompat.getDrawable(context, R.drawable.zeron_icon)?.toBitmap())
             .setContentTitle("Zeron")
-            .setSubText(agentName)
-            .setContentText(body)
+            .setContentText("$chatName: $body")
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             // The car's conversation list uses the chat id too, so one chat is one conversation.

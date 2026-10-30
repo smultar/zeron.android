@@ -58,6 +58,9 @@ dependencies {
     implementation("androidx.lifecycle:lifecycle-viewmodel-compose:2.8.7")
     implementation("androidx.browser:browser:1.8.0")
     implementation("androidx.biometric:biometric:1.1.0")
+    // biometric brings fragment 1.2.5, whose FragmentActivity rejects the Activity Result API's
+    // request codes (the attachments picker crashed); newer fragments route through it.
+    implementation("androidx.fragment:fragment-ktx:1.8.5")
     // Android Auto: a messaging screen in the car (conversations read aloud, spoken replies).
     implementation("androidx.car.app:app:1.7.0")
     implementation("androidx.car.app:app-projected:1.7.0")
