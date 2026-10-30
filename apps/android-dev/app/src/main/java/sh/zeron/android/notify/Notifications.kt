@@ -122,8 +122,8 @@ object Notifications {
     fun show(context: Context, chatId: String, title: String, category: Category, agent: String? = null, preview: String? = null, harness: String? = null) {
         if (!active(context) || !wants(context, category)) return
         ensureChannels(context)
-        // Zeron leads (the conversation is titled "Zeron" with the statue as its picture); each
-        // message comes from the chat, named for it and pictured with its agent's mark.
+        // Android already heads every alert with the app ("Zeron", the statue). Below it each alert is a
+        // one-to-one conversation with the chat: its name as the title, its agent's mark as the picture.
         val me = Person.Builder().setName("You").build()
         val chatName = title.ifBlank { agent?.takeIf { it.isNotBlank() } ?: "Session" }
         val from = Person.Builder()
@@ -135,8 +135,7 @@ object Notifications {
             .build()
         val body = spoken(category, preview)
         val style = NotificationCompat.MessagingStyle(me)
-            .setGroupConversation(true)
-            .setConversationTitle("Zeron")
+            .setGroupConversation(false)
             .addMessage(body, System.currentTimeMillis(), from)
         val reply = NotificationCompat.Action.Builder(R.drawable.ic_stat_zeron, "Reply", actionIntent(context, CarActionReceiver.ACTION_REPLY, chatId, mutable = true))
             .addRemoteInput(RemoteInput.Builder(EXTRA_REPLY).setLabel("Reply").build())
@@ -149,9 +148,8 @@ object Notifications {
             .build()
         val n = NotificationCompat.Builder(context, category.channel)
             .setSmallIcon(R.drawable.ic_stat_zeron)
-            .setLargeIcon(ContextCompat.getDrawable(context, R.drawable.zeron_icon)?.toBitmap())
-            .setContentTitle("Zeron")
-            .setContentText("$chatName: $body")
+            .setContentTitle(chatName)
+            .setContentText(body)
             .setStyle(style)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             // The car's conversation list uses the chat id too, so one chat is one conversation.
