@@ -291,6 +291,22 @@ private fun NotificationsCard() {
             Hairline(Modifier.padding(start = 16.dp))
             Column(
                 Modifier.fillMaxWidth().clickable {
+                    // Five seconds' grace to lock the phone or look at the car screen before it arrives.
+                    android.widget.Toast.makeText(context, "Test alert in 5 seconds", android.widget.Toast.LENGTH_SHORT).show()
+                    android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+                        n.show(
+                            context, "zeron-test-alert", "Notification test", sh.zeron.android.notify.Category.INPUT,
+                            "Claude Code", "This is a test alert from Zeron. Reply to try a spoken answer.", "claude-code",
+                        )
+                    }, 5_000)
+                }.padding(16.dp),
+            ) {
+                Text("Send a test alert", color = Z.text, fontSize = 15.sp)
+                Text("Posts a sample session alert in 5 seconds — on the phone, watch and Android Auto", color = Z.subline, fontSize = 12.sp)
+            }
+            Hairline(Modifier.padding(start = 16.dp))
+            Column(
+                Modifier.fillMaxWidth().clickable {
                     try { context.startActivity(android.content.Intent(android.provider.Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) } catch (_: Exception) {}
                 }.padding(16.dp),
             ) {
